@@ -7,6 +7,22 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+let databaseConnection;
+async function connectToDatabase() {
+  if (mongoose.connection.readyState === 1) return;
+  if (!databaseConnection) {
+    const mongoUri = process.env.MONGO_URI || (process.env.VERCEL ? '' : 'mongodb://127.0.0.1:27017/paramananda_clinic');
+    if (!mongoUri) throw new Error('MONGO_URI must be configured in the deployment environment');
+    databaseConnection = mongoose.connect(mongoUri).catch(error => {
+      databaseConnection = undefined;
+      throw error;
+    });
+  }
+  await databaseConnection;
+}
+
+app.get('/health', (req, res) => res.json({ status: 'ok' }));
+app.use('/api', (req, res, next) => connectToDatabase().then(() => next(), next));
 app.use('/api/doctors', require('./routes/doctors'));
 app.use('/api/appointments', require('./routes/appointments'));
 
@@ -29,7 +45,10 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3000;
-mongoose
-  .connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/paramananda_clinic')
-  .then(() => app.listen(PORT, () => console.log(`API running on http://localhost:${PORT}`)))
-  .catch(err => { console.error('Mongo connection failed:', err.message); process.exit(1); });
+if (require.main === module) {
+  connectToDatabase()
+    .then(() => app.listen(PORT, () => console.log(`API running on http://localhost:${PORT}`)))
+    .catch(err => { console.error('Mongo connection failed:', err.message); process.exit(1); });
+}
+
+module.exports = app;
